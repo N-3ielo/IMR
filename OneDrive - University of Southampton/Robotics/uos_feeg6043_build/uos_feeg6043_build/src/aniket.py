@@ -76,10 +76,7 @@ class LaptopPilot:
         self.aruco_driver = ArUcoUDPDriver(aruco_params, parent=self)
 
         ############# INITIALISE ATTRIBUTES ##########        
-        # path
-        self.northings_path = []
-        self.eastings_path = []        
-
+         
         self.initialise_pose = True # False once the pose is initialised
 
         # model pose
@@ -116,8 +113,8 @@ class LaptopPilot:
         wheel_diameter = 0.07 # measure this
         self.ddrive = ActuatorConfiguration(wheel_distance, wheel_diameter) #look at your tutorial and see how to use this
 
-        self.northings_path = [0, 1.5, 1.5, 0, 0] # create a list of waypoints
-        self.eastings_path = [0, 0, 1.5, 1.5, 0] # create a list of waypoints
+        self.northings_path = [0, 1.5, 1.5, 0, 0, 1.5, 1.5, 0, 0] # create a list of waypoints
+        self.eastings_path = [0, 0, 1.5, 1.5, 0, 0, 1.5, 1.5, 0] # create a list of waypoints
         self.relative_path = True # False if you want it to be absolute
 
         self.v = 0.1 #m/s
@@ -126,19 +123,21 @@ class LaptopPilot:
         self.accept_radius = 0.2 #m
 
         # control parameters        
-        self.tau_s = 0.5 # s to remove along track error 1
-        self.L = 0.2 # m distance to remove normal and angular error
+        self.tau_s = 0.75 # s to remove along track error 1
+        self.L = 0.4 # m distance to remove normal and angular error
         self.v_max = 1 # fastest the robot can go
         self.w_max = np.deg2rad(90) # fastest the robot can turn
         self.initialise_control = True # False once control gains is initialised
 
         # PF Parameters
-        self.N = 100
-        self.northings_std = 0.1   #m
-        self.eastings_std  = 0.1 #m
+        self.N = 200
+        self.northings_std = 0.03   #m
+        self.eastings_std  = 0.03 #m
         self.g_std   = np.deg2rad(1)   #rad
-        self.x_dot_std = 0.3 #m/s
-        self.g_dot_std = np.deg2rad(0.1) #rad/s
+        self.x_dot_std = 0.1 #m/s
+        self.g_dot_std = np.deg2rad(1) #rad/s
+        self.pf_radius = np.sqrt(4*self.northings_std*self.eastings_std)
+        self.neff_acceptance = 0.7
        
         ###############################################################        
        
@@ -517,7 +516,7 @@ class LaptopPilot:
         """Resample particles using systematic resample"""
        
         if verbose == True: print('effective particles:', self.neff(particles))
-        if self.neff(particles) < 0.5:
+        if self.neff(particles) < self.neff_acceptance:
             # Get the indexes of the particles to resample
             indexes = systematic_resample(particles.weight)
             if verbose == True: print('Resampling needed, sampled particles:',indexes)
@@ -600,7 +599,7 @@ class LaptopPilot:
 
                 # Initialise PF
                 self.particles = self.Particles(self.N)
-                self.initialise_particle_distribution(self.particles, centre=[-0., 0.], radius = np.sqrt(4*self.northings_std*self.eastings_std), heading = self.est_pose_yaw_rad)
+                self.initialise_particle_distribution(self.particles, centre=[self.est_pose_northings_m, self.est_pose_eastings_m], radius = self.pf_radius, heading = self.est_pose_yaw_rad)
                 self.particles.gamma = [0]*self.particles.N
            
        
@@ -635,6 +634,7 @@ class LaptopPilot:
 
             self.est_pose_northings_m, self.est_pose_eastings_m = kde_probability(self.particles, sigma_resolution, sampling_resolution)
             self.est_pose_yaw_rad = wrapped_mean(self.particles.gamma)
+             
              ################################################################################ Trajectory Control ################################################################################
 
             # take current pose estimate and update by twist
@@ -679,8 +679,6 @@ class LaptopPilot:
             if u[1]<-self.w_max: u[1]=-self.w_max
             if u[0]>self.v_max: u[0]=self.v_max
             if u[0]<-self.v_max: u[0]=-self.v_max
-
-           
 
             # actuator commands                
             q = self.ddrive.inv_kinematics(u)            
